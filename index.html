@@ -184,16 +184,18 @@
   </div>
   <div id="unity-warning"></div>
 </div>
+<!-- 이 부분만 index.html의 script 부분을 대체하세요 -->
 <script>
-  // 캐시 버스팅 함수: URL에 타임스탬프를 추가하여 항상 새로운 리소스를 요청하게 함
-  function addCacheBuster(url) {
-    return url + "?v=" + new Date().getTime();
-  }
-
-  // 서비스 워커 등록
+  // 서비스 워커 등록 함수 - 에러 핸들링 추가
   window.addEventListener("load", function () {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("ServiceWorker.js");
+      navigator.serviceWorker.register("ServiceWorker.js")
+              .then(function(registration) {
+                console.log('[Main] 서비스 워커 등록 성공:', registration.scope);
+              })
+              .catch(function(error) {
+                console.error('[Main] 서비스 워커 등록 실패:', error);
+              });
     }
   });
 
@@ -242,14 +244,15 @@
     codeUrl: buildUrl + "/WhatQuizShow.wasm",
     streamingAssetsUrl: "StreamingAssets",
     companyName: "DefaultCompany",
-  productName: "WhatQuizPlayer",
-          productVersion: "1.0",
-  showBanner: unityShowBanner,
+    productName: "WhatQuizPlayer",
+    productVersion: "1.0",
+    showBanner: unityShowBanner,
   };
 
   // 적응형 해상도를 위한 설정
   // Unity WebGL 캔버스 렌더링 대상 크기를 DOM 크기와 강제로 동기화
   config.matchWebGLToCanvasSize = true;
+
   // 모바일 디바이스에 대한 특별 처리
   if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
     var meta = document.createElement('meta');
@@ -263,35 +266,56 @@
 
   loadingBar.style.display = "block";
 
-  var script = document.createElement("script");
-  // 로더 스크립트 URL에 캐시 버스팅 매개변수 추가
-  script.src = addCacheBuster(loaderUrl);
-  script.onload = () => {
-    // 모든 구성 URL에 캐시 버스팅 매개변수 추가하여 항상 최신 파일 로드
-    config.dataUrl = addCacheBuster(config.dataUrl);
-    config.frameworkUrl = addCacheBuster(config.frameworkUrl);
-    config.codeUrl = addCacheBuster(config.codeUrl);
-    config.streamingAssetsUrl = addCacheBuster(config.streamingAssetsUrl);
+  // 로컬 스토리지에 현재 버전 확인 및 저장
+  var currentVersion = "1.0.0"; // 앱 버전, 업데이트 시 변경
+  var storedVersion = localStorage.getItem("whatQuizVersion");
 
-    createUnityInstance(canvas, config, (progress) => {
-      // 로딩 진행률 업데이트 - 프로그레스 바 너비와 퍼센트 텍스트
+  // 버전이 다르면 캐시 버스트 매개변수 추가
+  var cacheBuster = (storedVersion !== currentVersion) ? "?v=" + Date.now() : "";
+  localStorage.setItem("whatQuizVersion", currentVersion);
+
+  // 로더 스크립트 로드
+  var script = document.createElement("script");
+  script.src = loaderUrl + cacheBuster;
+
+  // 오류 처리 추가
+  script.onerror = function() {
+    console.error("Unity 로더 스크립트 로드 실패");
+    unityShowBanner("게임 로딩에 실패했습니다. 페이지를 새로고침 해주세요.", "error");
+  };
+
+  script.onload = function() {
+    // 모든 Unity 관련 URL에 같은 캐시 버스트 매개변수 추가
+    if (cacheBuster) {
+      config.dataUrl = config.dataUrl + cacheBuster;
+      config.frameworkUrl = config.frameworkUrl + cacheBuster;
+      config.codeUrl = config.codeUrl + cacheBuster;
+      config.streamingAssetsUrl = config.streamingAssetsUrl + cacheBuster;
+    }
+
+    // Unity 인스턴스 생성 시작
+    console.log("[Main] Unity 인스턴스 생성 시작");
+    createUnityInstance(canvas, config, function(progress) {
+      // 로딩 진행률 업데이트
       progressBarFull.style.width = 100 * progress + "%";
       loadingPercentage.innerHTML = Math.round(progress * 100) + "%";
-    }).then((unityInstance) => {
+    }).then(function(unityInstance) {
       // 로딩 완료 시 로딩 바 숨김
+      console.log("[Main] Unity 인스턴스 생성 성공");
       loadingBar.style.display = "none";
 
-      // 전체 화면 처리를 위한 이벤트 리스너 추가
+      // 전체 화면 처리를 위한 이벤트 리스너
       window.addEventListener('resize', function() {
         if (unityInstance) {
-          // 유니티 인스턴스에 크기 변경 이벤트 전달
           unityInstance.SendMessage('Canvas', 'OnWindowResize');
         }
       });
-    }).catch((message) => {
-      alert(message);
+    }).catch(function(message) {
+      console.error("[Main] Unity 인스턴스 생성 실패:", message);
+      unityShowBanner("게임 초기화에 실패했습니다: " + message, "error");
     });
   };
+
   document.body.appendChild(script);
 </script>
 </body>
